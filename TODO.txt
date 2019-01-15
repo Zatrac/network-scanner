@@ -1,0 +1,67 @@
+private async void btnClick() {
+label.Text = $"Scanning {ip}"
+btn.Enabled = false;
+
+var results = await Scan(ip);
+
+output.Text = results.TotalTime
+label.Text = $"Done"
+btn.Enabled = true;
+}
+
+
+Return list of hosts from scan class to UI thread
+
+
+        public async Task<List<ScanResult>> Main()
+        {
+            Console.WriteLine("Entering Scan.Main()");
+
+            List<ScanResult> hostList = new List<ScanResult>();
+
+            var timer = Stopwatch.StartNew();
+            var range = IPAddressRange.Parse(Subnet);
+
+            var tasks = range.AsEnumerable().Select(ip => Task.Factory.StartNew(async () =>
+            {
+                var ping = await Ping(ip, this.Timeout);
+
+                var result = new ScanResult
+                {
+                    IpAddress = ip,
+                    Ping = ping
+                };
+
+                if (ping.Status == IPStatus.Success)
+                {
+                    Console.WriteLine(ip + " is alive!");
+
+                    result.Dns = await Resolve(ip, this.Timeout);
+                    if (this.PortScan) result.Ports = await Ports(ip, this.Timeout);
+                }
+
+                return result;
+            })).ToList();
+
+            while (tasks.Count > 0)
+            {
+                var task = await Task.WhenAny(tasks);
+
+                var result = await task.Result;
+
+                if (result.Ping.Status == IPStatus.Success)
+                {
+                    hostList.Add(result);
+
+                    Console.WriteLine(
+                        $"{result.IpAddress} [{result.Dns ?? "??"}]: {result.Ping.RoundtripTime}ms - {result.Ports?.Count ?? 0} open port(s)");
+                }
+
+                tasks.Remove(task);
+            }
+
+            Console.WriteLine(
+                $"Scanned {range.AsEnumerable().Count():N0} host(s) and {range.AsEnumerable().Count() * 1024:N0} port(s) in {timer.ElapsedMilliseconds:N0}ms");
+
+            return hostList;
+        }
